@@ -48,27 +48,6 @@ extern "C" fn vblank_cb() {
     }
 }
 
-async fn slide_n(context: &Context<'_>, n: usize) -> bool {
-    match n {
-        0 => slide_intro(context).await,
-        1 => slide_ipmx_what(context).await,
-        2 => slide_st2110(context).await,
-        3 => slide_nmos(context).await,
-        4 => slide_nmos_live(context).await,
-        5 => slide_vsf(context).await,
-        6 => slide_ipmx_value(context).await,
-        7 => slide_benefits(context).await,
-        8 => slide_example(context).await,
-        9 => slide_benefits_2(context).await,
-        10 => slide_why_now(context).await,
-        11 => slide_why_now_2(context).await,
-        12 => slide_anim_generated(context).await,
-        13 => slide_thank_you(context).await,
-        _ => return false,
-    }
-    true
-}
-
 async fn presentation() {
     graphics::fade_palette(PaletteMask::ALL, 5, 0, 16, 0).await;
     clear_ui().await;
@@ -117,10 +96,41 @@ async fn presentation() {
     };
 
     unsafe { SetVBlankCallback(Some(vblank_cb)) };
-    let mut i = 0;
-    while slide_n(&context, i).await {
-        i += 1;
+
+    // ── Act 1: intro ──────────────────────────────────────────────────────────
+    slide_intro(&context).await;
+    slide_ipmx_what(&context).await;
+    slide_ipmx_value(&context).await;
+
+    // ── Act 2: interactive hub — choose which component to explore ────────────
+    let mut hub = HubState::new();
+    loop {
+        match slide_hub(&context, &hub).await {
+            HubChoice::ST2110 => {
+                slide_st2110(&context).await;
+                hub.st2110_done = true;
+            }
+            HubChoice::NMOS => {
+                slide_nmos(&context).await;
+                slide_nmos_live(&context).await;
+                hub.nmos_done = true;
+            }
+            HubChoice::VSF => {
+                slide_vsf(&context).await;
+                hub.vsf_done = true;
+            }
+            HubChoice::Continue => break,
+        }
     }
+
+    // ── Act 3: overview and conclusion ────────────────────────────────────────
+    slide_benefits(&context).await;
+    slide_example(&context).await;
+    slide_benefits_2(&context).await;
+    slide_why_now(&context).await;
+    slide_why_now_2(&context).await;
+    slide_anim_generated(&context).await;
+    slide_thank_you(&context).await;
 
     loop {
         sleep(1).await

@@ -88,6 +88,14 @@ pub fn blue_font() -> Font {
     }
 }
 
+pub fn red_font() -> Font {
+    Font {
+        fg_color: 4,
+        shadow_color: 5,
+        ..Font::new(FONT_SMALL as u8)
+    }
+}
+
 pub fn poke_sprite(species: u16, pos: impl Into<Vec2D<i16>>, priority: u8) -> PokemonSpritePic {
     poke_sprite_n(species, pos, priority, 0)
 }
