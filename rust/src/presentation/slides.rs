@@ -357,16 +357,6 @@ pub async fn slide_nmos_live(context: &Context<'_>) {
     print_text(&window, blue_font(), (0, 68), pkstr!(b"Receiver"));
     print_text(&window, font(), (0, 80), nmos_receiver_label());
 
-    let status = match nmos_status() {
-        0 => pkstr!(b"Idle"),
-        1 => pkstr!(b"Connecting..."),
-        2 => pkstr!(b"Connected !"),
-        3 => pkstr!(b"Failed"),
-        _ => pkstr!(b"Unknown"),
-    };
-    print_text(&window, font(), (0, 106), pkstr!(b"Status:"));
-    print_text(&window, font(), (50, 106), status);
-
     wait_a_button().await;
     graphics::fade_palette(PaletteMask::ALL, 5, 0, 16, 0).await;
     window.clear_with_border();
@@ -458,6 +448,11 @@ pub async fn slide_anim_generated(context: &Context<'_>) {
         letter.set_pos(Vec2D::new(x, 100i16));
         sleep(1).await;
         x += 2;
+    }
+
+    // Envelope has landed — signal the bridge to connect sender → receiver
+    if nmos_ready() {
+        nmos_request_connect();
     }
 
     wait_a_button().await;
