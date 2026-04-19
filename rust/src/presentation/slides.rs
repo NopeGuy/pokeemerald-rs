@@ -1,8 +1,10 @@
+use alloc::boxed::Box;
+
 use bindings::future::sleep;
 use bindings::graphics::{self, SpriteSheet, Vec2D, Window, *};
 use bindings::input::Button;
 use bindings::pokeemerald::*;
-use bindings::resources::Buffer;
+use bindings::resources::{AllocBuf, Buffer};
 use bindings::{include_res_lz, pkstr};
 
 use super::nmos::*;
@@ -63,8 +65,8 @@ pub async fn slide_hub(context: &Context<'_>, state: &HubState) -> HubChoice {
     // Positioned at y=40 (¼ screen down), starting at x=30 (⅛ screen right),
     // evenly spaced so all three fit within the 240px screen width.
     let _articuno = poke_sprite_n(144, (40i16,  40i16), 1, 0); // ST 2110
-    let _moltres  = poke_sprite_n(146, (116i16, 40i16), 1, 1); // VSF
-    let _zapdos   = poke_sprite_n(145, (192i16, 40i16), 1, 2); // NMOS
+    let _zapdos   = poke_sprite_n(145, (116i16, 40i16), 1, 1); // VSF
+    let _moltres  = poke_sprite_n(146, (192i16, 40i16), 1, 2); // NMOS
 
     // Menu window just below the birds (birds bottom at y≈104, window starts at tile 13 = 104px)
     let window = create_msg_window(context, (0, 13, 30, 7), 0).await;
@@ -370,30 +372,101 @@ pub async fn slide_nmos_live(context: &Context<'_>) {
     window.clear_with_border();
 }
 
+// ── Envelope sprite data (16×16, 4bpp) ───────────────────────────────────────
+// 4 tiles arranged 2×2.  Palette: 0=transparent, 1=black outline, 2=white body.
+const ENVELOPE_TILES: [u8; 128] = [
+    // Tile 0: top-left — left half of the V-flap
+    0x11, 0x11, 0x11, 0x11, // row 0: ████████
+    0x21, 0x21, 0x22, 0x22, // row 1: █░█░░░░░
+    0x21, 0x12, 0x22, 0x22, // row 2: █░░█░░░░
+    0x21, 0x22, 0x21, 0x22, // row 3: █░░░█░░░
+    0x21, 0x22, 0x12, 0x22, // row 4: █░░░░█░░
+    0x21, 0x22, 0x22, 0x21, // row 5: █░░░░░█░
+    0x21, 0x22, 0x22, 0x12, // row 6: █░░░░░░█
+    0x21, 0x22, 0x22, 0x22, // row 7: █░░░░░░░
+    // Tile 1: top-right — right half of the V-flap
+    0x11, 0x11, 0x11, 0x11, // row 0: ████████
+    0x22, 0x22, 0x12, 0x12, // row 1: ░░░░░█░█
+    0x22, 0x22, 0x21, 0x12, // row 2: ░░░░█░░█
+    0x22, 0x12, 0x22, 0x12, // row 3: ░░░█░░░█
+    0x22, 0x21, 0x22, 0x12, // row 4: ░░█░░░░█
+    0x12, 0x22, 0x22, 0x12, // row 5: ░█░░░░░█
+    0x21, 0x22, 0x22, 0x12, // row 6: █░░░░░░█  ← centre seam
+    0x22, 0x22, 0x22, 0x12, // row 7: ░░░░░░░█
+    // Tile 2: bottom-left — left edge + body
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x21, 0x22, 0x22, 0x22,
+    0x11, 0x11, 0x11, 0x11, // bottom border
+    // Tile 3: bottom-right — body + right edge
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x22, 0x22, 0x22, 0x12,
+    0x11, 0x11, 0x11, 0x11, // bottom border
+];
+const ENVELOPE_PAL: [u16; 16] = [
+    0x0000, // 0: transparent
+    0x0000, // 1: black outline
+    0x7FFF, // 2: white body
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000,
+];
+const ENVELOPE_ANIM_SEQ: &[AnimCmd] = &[anim_frame(0, 255, false, false), anim_end()];
+const ENVELOPE_ANIM_TABLE: &[*const AnimCmd] =
+    &[ENVELOPE_ANIM_SEQ.as_ptr(), core::ptr::null()];
+
 pub async fn slide_anim_generated(context: &Context<'_>) {
-    let window = create_msg_window(context, (2, 2, 26, 4), 0).await;
+    // Text box at the top (5 tiles = 40px, fits title + one subtitle line)
+    let window = create_msg_window(context, (2, 2, 26, 5), 0).await;
     print_text(&window, bigfont(), (0, 0), pkstr!(b"Another use case?"));
-    print_text(
-        &window,
-        font(),
-        (0, 14),
-        pkstr!(b"So we can make cool stuff like this as well."),
-    );
+    print_text(&window, font(), (0, 14), pkstr!(b"So we can make cool stuff like this as well."));
 
-    // TODO: make animation of pokemon holding frame with changing video
+    // Nidoran M on the left (sender), Nidoran F on the right (receiver).
+    // Each on its own OBJ palette slot so colours don't bleed into each other.
+    let _sender   = poke_sprite_n(32, ( 28i16, 100i16), 1, 0);
+    let _receiver = poke_sprite_n(29, (208i16, 100i16), 1, 2);
 
-    let mut sprite = poke_sprite(25, (40, 80), 1);
-    let mut x: i16 = 40;
-    let mut dx: i16 = 2;
-    for _ in 0..180u32 {
-        if x >= 200 || x <= 40 {
-            dx = -dx;
-        }
-        x += dx;
-        sprite.handle().set_pos(Vec2D::new(x, 80));
+    // Envelope sprite on OBJ palette slot 1 (won't collide with Nidorino).
+    let tile_buf: AllocBuf<TileBitmap4bpp> = AllocBuf::new({
+        let b: Box<[u8]> = Box::new(ENVELOPE_TILES);
+        b
+    });
+    let env_palette = load_obj_palette(1, &ENVELOPE_PAL);
+    let env_sheet = SpriteSheet::load(tile_buf, 0x1300u16, SPRITE_SIZE_16x16 as u8);
+    let env_anims = SpriteAnims {
+        anims: ENVELOPE_ANIM_TABLE.as_ptr(),
+        affine_anims: DUMMY_SPRITE_ANIMS.affine_anims,
+    };
+    let letter = SheetSprite::load(&env_sheet, env_anims, env_palette);
+    letter.set_pos(Vec2D::new(56i16, 100i16));
+    letter.start_animation(0);
+
+    graphics::fade_palette(PaletteMask::ALL, 5, 16, 0, 0).await;
+
+    // Fly the envelope from Nidoran M to Nidoran F
+    let mut x: i16 = 56;
+    while x <= 179 {
+        letter.set_pos(Vec2D::new(x, 100i16));
         sleep(1).await;
+        x += 2;
     }
-    transition_slide().await;
+
+    wait_a_button().await;
+
+    graphics::fade_palette(PaletteMask::ALL, 5, 0, 16, 0).await;
+    drop(letter);
+    drop(env_sheet);
+    drop(_sender);
+    drop(_receiver);
     window.clear_with_border();
 }
 
