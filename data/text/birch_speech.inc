@@ -1,6 +1,6 @@
 gText_Birch_Welcome::
 	.string "Hello, and welcome to this\n"
-	.string "TupperRust presentation !\p$"
+	.string "IPMX presentation !\p$"
 
 gText_Birch_Pokemon::
 	.string "$"
